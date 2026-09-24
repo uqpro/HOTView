@@ -19,6 +19,30 @@
 
   <style>
     #map { height: calc(100vh - 64px); width: 100%; }
+    
+    /* Pulsa Animasi untuk Marker Posisi User */
+    .user-location-pulse {
+      background: rgba(59, 130, 246, 0.4);
+      border-radius: 50%;
+      border: 2px solid #2563eb;
+      box-shadow: 0 0 15px rgba(37, 99, 235, 0.8);
+      animation: pulse-animation 2s infinite;
+    }
+
+    @keyframes pulse-animation {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+      }
+      70% {
+        transform: scale(1.15);
+        box-shadow: 0 0 0 12px rgba(37, 99, 235, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+      }
+    }
   </style>
 </head>
 <body class="bg-gray-100 font-sans antialiased flex flex-col h-screen">
@@ -27,12 +51,23 @@
   <header class="bg-red-700 text-white h-16 flex items-center justify-between px-4 shadow-md z-10">
     <div class="flex items-center gap-2">
       <i data-lucide="flame" class="w-7 h-7 text-yellow-400"></i>
-      <h1 class="font-bold text-lg tracking-wide">HOTSPOT MONITORING</h1>
+      <h1 class="font-bold text-lg tracking-wide hidden sm:block">HOTSPOT MONITORING</h1>
+      <h1 class="font-bold text-base sm:hidden">HOTSPOT</h1>
     </div>
     <div class="flex items-center gap-2">
-      <button id="btnSync" onclick="triggerSync()" class="bg-red-800 hover:bg-red-900 px-3 py-1.5 rounded text-xs flex items-center gap-1 transition">
-        <i data-lucide="refresh-cw" class="w-4 h-4" id="syncIcon"></i> Sinkronkan NASA
+      <!-- Tombol Re-Center Lokasi Saya -->
+      <button id="btnRecenter" onclick="recenterToUserLocation()" title="Re-center ke Lokasi Saya" class="bg-red-800 hover:bg-red-900 px-3 py-1.5 rounded text-xs flex items-center gap-1 transition border border-red-600 shadow-sm">
+        <i data-lucide="crosshair" class="w-4 h-4 text-blue-300" id="gpsIcon"></i> 
+        <span class="hidden md:inline">Lokasi Saya</span>
       </button>
+
+      <!-- Tombol Sinkronisasi NASA -->
+      <button id="btnSync" onclick="triggerSync()" class="bg-red-800 hover:bg-red-900 px-3 py-1.5 rounded text-xs flex items-center gap-1 transition">
+        <i data-lucide="refresh-cw" class="w-4 h-4" id="syncIcon"></i> 
+        <span class="hidden md:inline">Sinkronkan NASA</span>
+      </button>
+
+      <!-- Toggle Sidebar -->
       <button onclick="toggleSidebar()" class="bg-red-800 hover:bg-red-900 p-2 rounded text-xs transition">
         <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
       </button>
@@ -43,6 +78,11 @@
   <div class="flex-1 flex relative overflow-hidden">
     <!-- Map Container -->
     <div id="map"></div>
+
+    <!-- Tombol Floating Re-Center di Atas Peta (Pojok Kanan Bawah) -->
+    <button onclick="recenterToUserLocation()" class="absolute bottom-6 right-6 bg-white text-gray-700 hover:text-red-600 p-3 rounded-full shadow-2xl z-20 border border-gray-200 focus:outline-none transition transform active:scale-95" title="Re-center ke Lokasi Saya">
+      <i data-lucide="locate-fixed" class="w-6 h-6 text-blue-600"></i>
+    </button>
 
     <!-- Sidebar Analytics & Panel -->
     <div id="sidebar" class="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl z-20 transform translate-x-full transition-transform duration-300 flex flex-col">
@@ -113,10 +153,10 @@
   </div>
 
   <script>
-    // GANTI URL INI DENGAN DEPLOYMENT URL GOOGLE APPS SCRIPT WEB APP ANDA
+    // MASUKKAN URL GOOGLE APPS SCRIPT WEB APP ANDA DI SINI
     const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzpw3oqm2ddMpjiwyAO7mpuvsaY6mJgsrLMBhONL4ggWiLswZWueBHnRlLlGOQJAlCmsQ/exec";
 
-    let map, markersLayer;
+    let map, markersLayer, userLocationMarker, userAccuracyCircle;
 
     document.addEventListener("DOMContentLoaded", () => {
       lucide.createIcons();
@@ -126,7 +166,7 @@
     });
 
     function initMap() {
-      // Default Center Indonesia
+      // Default Center Indonesia (-2.548926, 118.014863)
       map = L.map('map').setView([-2.548926, 118.014863], 5);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -134,6 +174,87 @@
       }).addTo(map);
 
       markersLayer = L.layerGroup().addTo(map);
+    }
+
+    // -------------------------------------------------------------------------
+    // FITUR RE-CENTER GEOLOCATION POSISI USER
+    // -------------------------------------------------------------------------
+    function recenterToUserLocation() {
+      const gpsIcon = document.getElementById('gpsIcon');
+      if (gpsIcon) gpsIcon.classList.add('animate-spin');
+
+      if (!navigator.geolocation) {
+        alert("Geolocation tidak didukung oleh peramban/perangkat Anda.");
+        if (gpsIcon) gpsIcon.classList.remove('animate-spin');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+
+          // Terbangkan fokus kamera ke lokasi pengguna
+          map.flyTo([lat, lng], 13, {
+            animate: true,
+            duration: 1.5
+          });
+
+          // Hapus marker lokasi lama jika ada
+          if (userLocationMarker) map.removeLayer(userLocationMarker);
+          if (userAccuracyCircle) map.removeLayer(userAccuracyCircle);
+
+          // Tampilkan Lingkaran Akurasi GPS
+          userAccuracyCircle = L.circle([lat, lng], {
+            radius: accuracy,
+            color: '#3b82f6',
+            fillColor: '#60a5fa',
+            fillOpacity: 0.15,
+            weight: 1
+          }).addTo(map);
+
+          // Tampilkan Custom Pulsing Blue Marker
+          const userIcon = L.divIcon({
+            className: 'user-location-pulse',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+          });
+
+          userLocationMarker = L.marker([lat, lng], { icon: userIcon }).addTo(map);
+          userLocationMarker.bindPopup(`
+            <div class="text-xs space-y-1 text-center">
+              <p class="font-bold text-blue-700">📍 Lokasi Anda Saat Ini</p>
+              <p class="text-gray-500 text-[10px]">Lat: ${lat.toFixed(5)}, Lon: ${lng.toFixed(5)}</p>
+              <p class="text-gray-400 text-[9px]">Akurasi: ±${Math.round(accuracy)} meter</p>
+            </div>
+          `).openPopup();
+
+          if (gpsIcon) gpsIcon.classList.remove('animate-spin');
+        },
+        (error) => {
+          if (gpsIcon) gpsIcon.classList.remove('animate-spin');
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              alert("Izin akses lokasi ditolak. Silakan izinkan akses GPS pada browser Anda.");
+              break;
+            case error.POSITION_UNAVAILABLE:
+              alert("Informasi lokasi tidak tersedia.");
+              break;
+            case error.TIMEOUT:
+              alert("Permintaan untuk mendapatkan lokasi pengguna *timeout*.");
+              break;
+            default:
+              alert("Gagal mendapatkan lokasi: " + error.message);
+              break;
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
     }
 
     function toggleSidebar() {
@@ -186,7 +307,6 @@
         marker.bindPopup(popupContent);
         markersLayer.addLayer(marker);
 
-        // Sidebar Item List
         const card = document.createElement('div');
         card.className = "p-2 border rounded hover:bg-gray-50 cursor-pointer text-xs space-y-0.5";
         card.innerHTML = `
@@ -197,7 +317,7 @@
           <div class="text-gray-500 text-[10px]">Lat: ${item.latitude}, Lon: ${item.longitude}</div>
         `;
         card.onclick = () => {
-          map.setView([item.latitude, item.longitude], 12);
+          map.flyTo([item.latitude, item.longitude], 12);
           marker.openPopup();
         };
         listEl.appendChild(card);
