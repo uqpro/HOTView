@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring Titik Api (Hotspot) - NASA FIRMS</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#dc2626">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Leaflet WebGIS CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    #map { height: calc(100vh - 64px); width: 100%; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased flex flex-col h-screen">
+
+  <!-- Header / Navigation -->
+  <header class="bg-red-700 text-white h-16 flex items-center justify-between px-4 shadow-md z-10">
+    <div class="flex items-center gap-2">
+      <i data-lucide="flame" class="w-7 h-7 text-yellow-400"></i>
+      <h1 class="font-bold text-lg tracking-wide">HOTSPOT MONITORING</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="btnSync" onclick="triggerSync()" class="bg-red-800 hover:bg-red-900 px-3 py-1.5 rounded text-xs flex items-center gap-1 transition">
+        <i data-lucide="refresh-cw" class="w-4 h-4" id="syncIcon"></i> Sinkronkan NASA
+      </button>
+      <button onclick="toggleSidebar()" class="bg-red-800 hover:bg-red-900 p-2 rounded text-xs transition">
+        <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="flex-1 flex relative overflow-hidden">
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <!-- Sidebar Analytics & Panel -->
+    <div id="sidebar" class="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl z-20 transform translate-x-full transition-transform duration-300 flex flex-col">
+      <div class="p-4 bg-gray-50 border-b flex justify-between items-center">
+        <h2 class="font-bold text-gray-800 flex items-center gap-2">
+          <i data-lucide="activity" class="w-4 h-4 text-red-600"></i> Ringkasan Hotspot
+        </h2>
+        <button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-700">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 flex-1 overflow-y-auto space-y-4">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-red-50 border border-red-200 p-3 rounded-lg text-center">
+            <span class="block text-2xl font-bold text-red-700" id="statTotal">0</span>
+            <span class="text-xs text-red-600 font-medium">Total Hotspot</span>
+          </div>
+          <div class="bg-orange-50 border border-orange-200 p-3 rounded-lg text-center">
+            <span class="block text-2xl font-bold text-orange-700" id="statHighConf">0</span>
+            <span class="text-xs text-orange-600 font-medium">Tingkat Tinggi</span>
+          </div>
+        </div>
+
+        <!-- Filter / List -->
+        <div>
+          <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Daftar Titik Terkini</h3>
+          <div id="hotspotList" class="space-y-2 text-sm">
+            <p class="text-gray-400 text-xs text-center py-4">Memuat data...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Form Verifikasi Lapangan -->
+  <div id="reportModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-30 p-4">
+    <div class="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="font-bold text-gray-800">Laporan Verifikasi Lapangan</h3>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <form id="fieldForm" onsubmit="submitFieldReport(event)">
+        <input type="hidden" id="modalHotspotId">
+        <div>
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Nama Petugas</label>
+          <input type="text" id="officerName" required class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none">
+        </div>
+        <div class="mt-3">
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Status Lapangan</label>
+          <select id="actionTaken" class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none">
+            <option value="Terverifikasi Api">Terverifikasi Api Nyata</option>
+            <option value="Padam">Sudah Dipadamkan</option>
+            <option value="False Alarm">False Alarm (Bukan Api)</option>
+          </select>
+        </div>
+        <div class="mt-3">
+          <label class="block text-xs font-semibold text-gray-600 mb-1">Catatan Kondisi</label>
+          <textarea id="fieldNotes" rows="3" required class="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-red-500 outline-none" placeholder="Deskripsikan Luasan/Kondisi Lapangan..."></textarea>
+        </div>
+        <div class="mt-4 flex justify-end gap-2">
+          <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded text-xs font-semibold text-gray-600">Batal</button>
+          <button type="submit" class="px-4 py-2 bg-red-600 text-white rounded text-xs font-semibold hover:bg-red-700">Simpan Laporan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // GANTI URL INI DENGAN DEPLOYMENT URL GOOGLE APPS SCRIPT WEB APP ANDA
+    const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzpw3oqm2ddMpjiwyAO7mpuvsaY6mJgsrLMBhONL4ggWiLswZWueBHnRlLlGOQJAlCmsQ/exec";
+
+    let map, markersLayer;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+      initMap();
+      fetchHotspots();
+      registerSW();
+    });
+
+    function initMap() {
+      // Default Center Indonesia
+      map = L.map('map').setView([-2.548926, 118.014863], 5);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors | Data: NASA FIRMS'
+      }).addTo(map);
+
+      markersLayer = L.layerGroup().addTo(map);
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('translate-x-full');
+    }
+
+    async function fetchHotspots() {
+      try {
+        const response = await fetch(`${GAS_WEB_APP_URL}?action=getHotspots`);
+        const res = await response.json();
+
+        if (res.status === 'success') {
+          renderHotspotsOnMap(res.data);
+          updateAnalytics(res.data);
+        }
+      } catch (err) {
+        console.error("Gagal memuat data hotspot:", err);
+      }
+    }
+
+    function renderHotspotsOnMap(hotspots) {
+      markersLayer.clearLayers();
+      const listEl = document.getElementById('hotspotList');
+      listEl.innerHTML = '';
+
+      hotspots.forEach(item => {
+        const color = item.confidence === 'high' || item.confidence > 80 ? '#dc2626' : '#f97316';
+
+        const marker = L.circleMarker([item.latitude, item.longitude], {
+          radius: 8,
+          fillColor: color,
+          color: '#ffffff',
+          weight: 1.5,
+          opacity: 1,
+          fillOpacity: 0.8
+        });
+
+        const popupContent = `
+          <div class="text-xs space-y-1">
+            <h4 class="font-bold text-red-700">${item.hotspot_id}</h4>
+            <p><b>Suhu Kecerahan:</b> ${item.brightness} K</p>
+            <p><b>Kepercayaan:</b> ${item.confidence}</p>
+            <p><b>Waktu Akuisisi:</b> ${item.acq_date} ${item.acq_time} UTC</p>
+            <p><b>Satelit:</b> ${item.satellite}</p>
+            <p><b>Status:</b> <span class="px-1.5 py-0.5 bg-gray-100 rounded text-gray-800 font-semibold">${item.status_lapangan}</span></p>
+            <button onclick="openReportModal('${item.hotspot_id}')" class="mt-2 w-full bg-red-600 text-white py-1 rounded text-center text-xs font-semibold block hover:bg-red-700">Verifikasi Lapangan</button>
+          </div>
+        `;
+
+        marker.bindPopup(popupContent);
+        markersLayer.addLayer(marker);
+
+        // Sidebar Item List
+        const card = document.createElement('div');
+        card.className = "p-2 border rounded hover:bg-gray-50 cursor-pointer text-xs space-y-0.5";
+        card.innerHTML = `
+          <div class="flex justify-between font-semibold text-gray-700">
+            <span>${item.acq_date} (${item.acq_time})</span>
+            <span class="text-red-600">${item.brightness} K</span>
+          </div>
+          <div class="text-gray-500 text-[10px]">Lat: ${item.latitude}, Lon: ${item.longitude}</div>
+        `;
+        card.onclick = () => {
+          map.setView([item.latitude, item.longitude], 12);
+          marker.openPopup();
+        };
+        listEl.appendChild(card);
+      });
+    }
+
+    function updateAnalytics(data) {
+      document.getElementById('statTotal').innerText = data.length;
+      const highConf = data.filter(d => d.confidence === 'high' || d.confidence > 80).length;
+      document.getElementById('statHighConf').innerText = highConf;
+    }
+
+    async function triggerSync() {
+      const icon = document.getElementById('syncIcon');
+      icon.classList.add('animate-spin');
+
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'syncNasaFirms' })
+        });
+        const res = await response.json();
+        alert(res.message);
+        fetchHotspots();
+      } catch (err) {
+        alert("Gagal sinkronisasi: " + err.toString());
+      } finally {
+        icon.classList.remove('animate-spin');
+      }
+    }
+
+    function openReportModal(hotspotId) {
+      document.getElementById('modalHotspotId').value = hotspotId;
+      document.getElementById('reportModal').classList.remove('hidden');
+      document.getElementById('reportModal').classList.add('flex');
+    }
+
+    function closeModal() {
+      document.getElementById('reportModal').classList.add('hidden');
+      document.getElementById('reportModal').classList.remove('flex');
+    }
+
+    async function submitFieldReport(e) {
+      e.preventDefault();
+      const payload = {
+        action: 'saveFieldReport',
+        data: {
+          hotspot_id: document.getElementById('modalHotspotId').value,
+          officer_name: document.getElementById('officerName').value,
+          action_taken: document.getElementById('actionTaken').value,
+          notes: document.getElementById('fieldNotes').value
+        }
+      };
+
+      try {
+        const response = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const res = await response.json();
+        alert(res.message);
+        closeModal();
+        fetchHotspots();
+      } catch (err) {
+        alert("Gagal mengirim laporan: " + err.toString());
+      }
+    }
+
+    function registerSW() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
+      }
+    }
+  </script>
+</body>
+</html>

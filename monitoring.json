@@ -1,0 +1,20 @@
+{
+  "name": "Monitoring Hotspot NASA FIRMS",
+  "short_name": "HotspotMap",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#dc2626",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/785/785116.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/785/785116.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
